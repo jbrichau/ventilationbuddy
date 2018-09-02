@@ -9,7 +9,7 @@
 #define RELAY3 D5
 #define RELAY4 D6
 
-float humidity,temp,dewpoint=0;
+double humidity,temp,dewpoint=0;
 bool fanIsRunning=false;
 
 PietteTech_DHT DHT(DHTPIN, DHTTYPE);
@@ -31,24 +31,27 @@ void setup()
   digitalWrite(RELAY4, LOW);
 
   Particle.function("relay", relayControl);
+  Particle.variable("temp", temp);
+  Particle.variable("humidity", humidity);
+  Particle.variable("dewpoint", dewpoint);
   //Serial.begin(9600);
 }
 
 void loop()
 {
   measure();
-  if(humidity > 50 && !fanIsRunning)
+  if(humidity >= 65 && !fanIsRunning)
     turnOnFan();
-  if(humidity < 50 && fanIsRunning)
+  if(humidity < 65 && fanIsRunning)
     turnOffFan();
-  Serial.print("Humidity (%): ");
+  /*Serial.print("Humidity (%): ");
   Serial.println(humidity, 2);
 
   Serial.print("Temperature (oC): ");
   Serial.println(temp, 2);
 
   Serial.print("Dew Point Slow (oC): ");
-  Serial.println(dewpoint);
+  Serial.println(dewpoint);*/
   delay(2500);
 }
 
