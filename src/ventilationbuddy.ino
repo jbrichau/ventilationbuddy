@@ -2,15 +2,19 @@
 
 #define DHTTYPE  DHT22              // Sensor type DHT11/21/22/AM2301/AM2302
 #define DHTPIN   A0           	    // Digital pin for communications
-#define DHT_SAMPLE_INTERVAL   2000  // Sample every two seconds
+#define DHT_SAMPLE_INTERVAL   3000  // Sample every 3 seconds
 
 #define RELAY1 D3
 #define RELAY2 D4
 #define RELAY3 D5
 #define RELAY4 D6
 
-double humidity,temp,dewpoint=0;
-bool fanIsRunning=false;
+SYSTEM_MODE(SEMI_AUTOMATIC);
+
+double humidity,temp,dewpoint = 0;
+String fanStatus = "OFF";
+bool manualRun = false;
+int humidityTreshold = 65;
 
 PietteTech_DHT DHT(DHTPIN, DHTTYPE);
 
@@ -30,19 +34,20 @@ void setup()
   digitalWrite(RELAY3, LOW);
   digitalWrite(RELAY4, LOW);
 
-  Particle.function("relay", relayControl);
+  Particle.function("fan", fancontrol);
   Particle.variable("temp", temp);
   Particle.variable("humidity", humidity);
   Particle.variable("dewpoint", dewpoint);
+  Particle.variable("fanStatus", fanStatus);
   //Serial.begin(9600);
 }
 
 void loop()
 {
   measure();
-  if(humidity >= 65 && !fanIsRunning)
+  if(humidity >= humidityTreshold && (fanStatus == "OFF"))
     turnOnFan();
-  if(humidity < 65 && fanIsRunning)
+  if(humidity < humidityTreshold && (fanStatus == "ON") && !manualRun)
     turnOffFan();
   /*Serial.print("Humidity (%): ");
   Serial.println(humidity, 2);
@@ -52,70 +57,83 @@ void loop()
 
   Serial.print("Dew Point Slow (oC): ");
   Serial.println(dewpoint);*/
-  delay(2500);
+  connect();
+  delay(DHT_SAMPLE_INTERVAL);
 }
 
-// command format r1,HIGH
-int relayControl(String command)
-{
-  int relayState = 0;
-  // parse the relay number
-  int relayNumber = command.charAt(1) - '0';
-  // do a sanity check
-  if (relayNumber < 1 || relayNumber > 4) return -1;
-
-  // find out the state of the relay
-  if (command.substring(3,7) == "HIGH") relayState = 1;
-  else if (command.substring(3,6) == "LOW") relayState = 0;
-  else return -1;
-
-  // write to the appropriate relay
-  digitalWrite(relayNumber+2, relayState);
+int fancontrol(String command) {
+  if ((fanStatus == "ON") && command == "OFF") {
+    manualRun = false;
+    turnOffFan();
+  }
+  if ((fanStatus == "OFF") && command == "ON") {
+    manualRun = true;
+    turnOnFan();
+  }
   return 1;
+}
+
+void publishEvent(String eventName, String data) {
+  connect();
+  Particle.publish(eventName,data);
+}
+
+void connect() {
+  if (Particle.connected() == false) {
+    Particle.connect();
+  }
 }
 
 void turnOnFan() {
   digitalWrite(RELAY1,HIGH);
-  fanIsRunning = true;
+  fanStatus = "ON";
+  publishEvent("fan","on");
 }
 
 void turnOffFan() {
   digitalWrite(RELAY1,LOW);
-  fanIsRunning = false;
+  fanStatus = "OFF";
+  publishEvent("fan","off");
 }
 
 void measure() {
-  int result = DHT.acquireAndWait(2000); // wait up to 2 sec (default indefinitely)
-
-  if(result==DHTLIB_OK) {
-    humidity = DHT.getHumidity();
-    temp = DHT.getCelsius();
-    dewpoint = DHT.getDewPointSlow();
-  } else {
-    switch (result) {
-      case DHTLIB_ERROR_CHECKSUM:
-        Serial.println("Error\n\r\tChecksum error");
-        break;
-      case DHTLIB_ERROR_ISR_TIMEOUT:
-        Serial.println("Error\n\r\tISR time out error");
-        break;
-      case DHTLIB_ERROR_RESPONSE_TIMEOUT:
-        Serial.println("Error\n\r\tResponse time out error");
-        break;
-      case DHTLIB_ERROR_DATA_TIMEOUT:
-        Serial.println("Error\n\r\tData time out error");
-        break;
-      case DHTLIB_ERROR_ACQUIRING:
-        Serial.println("Error\n\r\tAcquiring");
-        break;
-      case DHTLIB_ERROR_DELTA:
-        Serial.println("Error\n\r\tDelta time to small");
-        break;
-      case DHTLIB_ERROR_NOTSTARTED:
-        Serial.println("Error\n\r\tNot started");
-        break;
-      default:
-        Serial.println("Unknown error");
-    }
+  int result = DHT.acquireAndWait(2000);
+  switch (result) {
+    case DHTLIB_OK:
+      humidity = DHT.getHumidity();
+      temp = DHT.getCelsius();
+      dewpoint = DHT.getDewPointSlow();
+      break;
+    case DHTLIB_ERROR_CHECKSUM:
+      publishEvent("error","DHT read: Checksum error");
+      //Serial.println("Error\n\r\tChecksum error");
+      break;
+    case DHTLIB_ERROR_ISR_TIMEOUT:
+      publishEvent("error","DHT read: ISR time out error");
+      //Serial.println("Error\n\r\tISR time out error");
+      break;
+    case DHTLIB_ERROR_RESPONSE_TIMEOUT:
+      publishEvent("error","DHT read: Response time out error");
+      //Serial.println("Error\n\r\tResponse time out error");
+      break;
+    case DHTLIB_ERROR_DATA_TIMEOUT:
+      publishEvent("error","DHT read: Data time out error");
+      //Serial.println("Error\n\r\tData time out error");
+      break;
+    case DHTLIB_ERROR_ACQUIRING:
+      publishEvent("error","DHT read: Acquiring");
+      //Serial.println("Error\n\r\tAcquiring");
+      break;
+    case DHTLIB_ERROR_DELTA:
+      publishEvent("error","DHT read: Delta time to small");
+      //Serial.println("Error\n\r\tDelta time too small");
+      break;
+    case DHTLIB_ERROR_NOTSTARTED:
+      publishEvent("error","DHT read: Not started");
+      //Serial.println("Error\n\r\tNot started");
+      break;
+    default:
+      publishEvent("error","DHT read: Unknown error");
+      //Serial.println("Unknown error");
   }
 }
