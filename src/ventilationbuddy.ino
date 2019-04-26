@@ -9,7 +9,8 @@
 #define RELAY3 D5
 #define RELAY4 D6
 
-SYSTEM_MODE(SEMI_AUTOMATIC);
+SYSTEM_MODE(AUTOMATIC);
+SYSTEM_THREAD(ENABLED);
 
 double humidity,temp,dewpoint = 0;
 String fanStatus = "OFF";
@@ -40,6 +41,7 @@ void setup()
   Particle.variable("dewpoint", dewpoint);
   Particle.variable("fanStatus", fanStatus);
   //Serial.begin(9600);
+  DHT.begin();
 }
 
 void loop()
@@ -57,7 +59,7 @@ void loop()
 
   Serial.print("Dew Point Slow (oC): ");
   Serial.println(dewpoint);*/
-  connect();
+  //connect();
   delay(DHT_SAMPLE_INTERVAL);
 }
 
@@ -74,8 +76,8 @@ int fancontrol(String command) {
 }
 
 void publishEvent(String eventName, String data) {
-  connect();
-  Particle.publish(eventName,data);
+  //connect();
+  Particle.publish(eventName,data,PRIVATE);
 }
 
 void connect() {
