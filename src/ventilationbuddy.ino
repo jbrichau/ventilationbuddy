@@ -2,7 +2,10 @@
 
 #define DHTTYPE  DHT22              // Sensor type DHT11/21/22/AM2301/AM2302
 #define DHTPIN   A0           	    // Digital pin for communications
-#define DHT_SAMPLE_INTERVAL   3000  // Sample every 3 seconds
+#define DHT_SAMPLE_INTERVAL 30000   // Sample every 30 seconds
+#define SAMPLE_SIZE 100
+#define TRESHOLD_INTERVAL   5
+#define INCREASE_TRESHOLD 20
 
 #define RELAY1 D3
 #define RELAY2 D4
@@ -12,10 +15,15 @@
 SYSTEM_MODE(AUTOMATIC);
 SYSTEM_THREAD(ENABLED);
 
+// WARNING: will not work after device os 1.1.1:
+// https://github.com/particle-iot/device-os/issues/1835
+
 double humidity,temp,dewpoint = 0;
+double humidity_measurements[SAMPLE_SIZE];
+double humidity_cutoff;
+unsigned long time_cutoff;
 String fanStatus = "OFF";
-bool manualRun = false;
-int humidityTreshold = 65;
+bool manualOverride = false;
 
 PietteTech_DHT DHT(DHTPIN, DHTTYPE);
 
@@ -24,7 +32,7 @@ void setup()
   //DHT22 requires pullup
   pinMode(DHTPIN, INPUT_PULLUP);
 
-  //Initilize the relay control pins as output
+  //Initialize the relay control pins as output
   pinMode(RELAY1, OUTPUT);
   pinMode(RELAY2, OUTPUT);
   pinMode(RELAY3, OUTPUT);
@@ -40,37 +48,43 @@ void setup()
   Particle.variable("humidity", humidity);
   Particle.variable("dewpoint", dewpoint);
   Particle.variable("fanStatus", fanStatus);
-  //Serial.begin(9600);
+  Particle.variable("override", manualOverride);
   DHT.begin();
+  for(int i=0; i<SAMPLE_SIZE; i++)
+    humidity_measurements[i] = 0;
+  time_cutoff = Time.now();
 }
 
 void loop()
 {
   measure();
-  if(humidity >= humidityTreshold && (fanStatus == "OFF"))
-    turnOnFan();
-  if(humidity < humidityTreshold && (fanStatus == "ON") && !manualRun)
-    turnOffFan();
-  /*Serial.print("Humidity (%): ");
-  Serial.println(humidity, 2);
-
-  Serial.print("Temperature (oC): ");
-  Serial.println(temp, 2);
-
-  Serial.print("Dew Point Slow (oC): ");
-  Serial.println(dewpoint);*/
-  //connect();
+  if(!manualOverride) {
+    if((fanStatus == "OFF") && (humidityIncrease() > INCREASE_TRESHOLD)) {
+      humidity_cutoff = humidity_measurements[SAMPLE_SIZE - TRESHOLD_INTERVAL];
+      time_cutoff = Time.now() + 7200;
+      turnOnFan();
+    }
+    if((fanStatus == "ON") && (humidity_measurements[SAMPLE_SIZE] <= humidity_cutoff || time_cutoff <= Time.now()))
+      turnOffFan();
+  }
   delay(DHT_SAMPLE_INTERVAL);
+}
+
+int humidityIncrease() {
+  return (int)(humidity_measurements[SAMPLE_SIZE] - humidity_measurements[SAMPLE_SIZE - TRESHOLD_INTERVAL]);
 }
 
 int fancontrol(String command) {
   if ((fanStatus == "ON") && command == "OFF") {
-    manualRun = false;
     turnOffFan();
+    manualOverride = true;
   }
   if ((fanStatus == "OFF") && command == "ON") {
-    manualRun = true;
     turnOnFan();
+    manualOverride = true;
+  }
+  if (command == "AUTO") {
+    manualOverride = false;
   }
   return 1;
 }
@@ -102,7 +116,10 @@ void measure() {
   int result = DHT.acquireAndWait(2000);
   switch (result) {
     case DHTLIB_OK:
+      for(int i=SAMPLE_SIZE; i>0 ; i--)
+        humidity_measurements[i-1] = humidity_measurements[i];
       humidity = DHT.getHumidity();
+      humidity_measurements[SAMPLE_SIZE] = humidity;
       temp = DHT.getCelsius();
       dewpoint = DHT.getDewPointSlow();
       break;
