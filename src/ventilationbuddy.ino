@@ -5,7 +5,7 @@
 #define DHT_SAMPLE_INTERVAL 30000   // Sample every 30 seconds
 #define SAMPLE_SIZE 100
 #define TRESHOLD_INTERVAL   5
-#define INCREASE_TRESHOLD 20
+#define INCREASE_TRESHOLD 10
 
 #define RELAY1 D3
 #define RELAY2 D4
@@ -50,8 +50,9 @@ void setup()
   Particle.variable("fanStatus", fanStatus);
   Particle.variable("override", manualOverride);
   DHT.begin();
+  measure();
   for(int i=0; i<SAMPLE_SIZE; i++)
-    humidity_measurements[i] = 0;
+    humidity_measurements[i] = humidity_measurements[SAMPLE_SIZE];
   time_cutoff = Time.now();
 }
 
