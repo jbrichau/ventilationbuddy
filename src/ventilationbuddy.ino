@@ -3,8 +3,7 @@
 #define DHTTYPE  DHT22              // Sensor type DHT11/21/22/AM2301/AM2302
 #define DHTPIN   A0           	    // Digital pin for communications
 #define DHT_SAMPLE_INTERVAL 30000   // Sample every 30 seconds
-#define SAMPLE_SIZE 100
-#define TRESHOLD_INTERVAL   5
+#define SAMPLE_SIZE 30
 #define INCREASE_TRESHOLD 10
 
 #define RELAY1 D3
@@ -44,6 +43,7 @@ void setup()
   digitalWrite(RELAY4, LOW);
 
   Particle.function("fan", fancontrol);
+  Particle.function("humidityIncrease",humidityIncreaseF);
   Particle.variable("temp", temp);
   Particle.variable("humidity", humidity);
   Particle.variable("dewpoint", dewpoint);
@@ -52,7 +52,7 @@ void setup()
   DHT.begin();
   measure();
   for(int i=0; i<SAMPLE_SIZE; i++)
-    humidity_measurements[i] = humidity_measurements[SAMPLE_SIZE];
+    humidity_measurements[i] = humidity_measurements[SAMPLE_SIZE - 1];
   time_cutoff = Time.now();
 }
 
@@ -61,18 +61,23 @@ void loop()
   measure();
   if(!manualOverride) {
     if((fanStatus == "OFF") && (humidityIncrease() > INCREASE_TRESHOLD)) {
-      humidity_cutoff = humidity_measurements[SAMPLE_SIZE - TRESHOLD_INTERVAL];
+      humidity_cutoff = humidity_measurements[0];
       time_cutoff = Time.now() + 7200;
       turnOnFan();
     }
-    if((fanStatus == "ON") && (humidity_measurements[SAMPLE_SIZE] <= humidity_cutoff || time_cutoff <= Time.now()))
+    if((fanStatus == "ON") && (humidity_measurements[SAMPLE_SIZE - 1] <= humidity_cutoff || time_cutoff <= Time.now()))
       turnOffFan();
   }
+  Particle.publish("ventdata", ventilator_data(), PRIVATE);
   delay(DHT_SAMPLE_INTERVAL);
 }
 
+int humidityIncreaseF(String command){
+  return humidityIncrease();
+}
+
 int humidityIncrease() {
-  return (int)(humidity_measurements[SAMPLE_SIZE] - humidity_measurements[SAMPLE_SIZE - TRESHOLD_INTERVAL]);
+  return (int)(humidity_measurements[SAMPLE_SIZE - 1] - humidity_measurements[0]);
 }
 
 int fancontrol(String command) {
@@ -104,23 +109,21 @@ void connect() {
 void turnOnFan() {
   digitalWrite(RELAY1,HIGH);
   fanStatus = "ON";
-  publishEvent("fan","on");
 }
 
 void turnOffFan() {
   digitalWrite(RELAY1,LOW);
   fanStatus = "OFF";
-  publishEvent("fan","off");
 }
 
 void measure() {
   int result = DHT.acquireAndWait(2000);
   switch (result) {
     case DHTLIB_OK:
-      for(int i=SAMPLE_SIZE; i>0 ; i--)
+      for(int i=SAMPLE_SIZE-1; i>0 ; i--)
         humidity_measurements[i-1] = humidity_measurements[i];
       humidity = DHT.getHumidity();
-      humidity_measurements[SAMPLE_SIZE] = humidity;
+      humidity_measurements[SAMPLE_SIZE - 1] = humidity;
       temp = DHT.getCelsius();
       dewpoint = DHT.getDewPointSlow();
       break;
@@ -156,4 +159,8 @@ void measure() {
       publishEvent("error","DHT read: Unknown error");
       //Serial.println("Unknown error");
   }
+}
+
+String ventilator_data() {
+    return String::format("{\"temp\":%.1f,\"hum\":%.1f,\"dew\":%.1f,\"fan\":\"%s\"}",temp,humidity,dewpoint,fanStatus.c_str());
 }
