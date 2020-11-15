@@ -30,7 +30,6 @@ void setup()
 {
   //DHT22 requires pullup
   pinMode(DHTPIN, INPUT_PULLUP);
-
   //Initialize the relay control pins as output
   pinMode(RELAY1, OUTPUT);
   pinMode(RELAY2, OUTPUT);
@@ -49,9 +48,10 @@ void setup()
   Particle.variable("dewpoint", dewpoint);
   Particle.variable("fanStatus", fanStatus);
   Particle.variable("override", manualOverride);
+  Particle.variable("cutoffvalue", humidity_cutoff);
   DHT.begin();
   measure();
-  for(int i=0; i<SAMPLE_SIZE; i++)
+  for(int i=0; i < SAMPLE_SIZE - 1; i++)
     humidity_measurements[i] = humidity_measurements[SAMPLE_SIZE - 1];
   time_cutoff = Time.now();
 }
@@ -68,7 +68,7 @@ void loop()
     if((fanStatus == "ON") && (humidity_measurements[SAMPLE_SIZE - 1] <= humidity_cutoff || time_cutoff <= Time.now()))
       turnOffFan();
   }
-  Particle.publish("ventdata", ventilator_data(), PRIVATE);
+  //publishEvent("ventdata", ventilator_data());
   delay(DHT_SAMPLE_INTERVAL);
 }
 
@@ -120,8 +120,8 @@ void measure() {
   int result = DHT.acquireAndWait(2000);
   switch (result) {
     case DHTLIB_OK:
-      for(int i=SAMPLE_SIZE-1; i>0 ; i--)
-        humidity_measurements[i-1] = humidity_measurements[i];
+      for(int i=0; i < SAMPLE_SIZE - 1 ; i++)
+        humidity_measurements[i] = humidity_measurements[i+1];
       humidity = DHT.getHumidity();
       humidity_measurements[SAMPLE_SIZE - 1] = humidity;
       temp = DHT.getCelsius();
